@@ -29,7 +29,19 @@ var games;
 /**
  * setup - goes through page and replaces elements that contain class "game" with a game
  */
+
+function sendGarbage(amt){
+  socket.emit('attack', amt);
+}
+function acceptGarbage(x){
+  if(games[0]) games[0].addGarbage(x);
+}
+
 function setup() {
+  socket = io();
+  socket.on("receive", acceptGarbage);
+  socket.emit("updateName", prompt("NAME?"))
+
     games = [];
 
     var ele, ele1, ele2;
@@ -219,13 +231,29 @@ class Game {
         this.stats.addStatsListener("endGame", function(s) {
             s.endTime.updateValue(new Date().getTime());
         });
-        this.stats.addStatsListener("linesCleared", function(s) {
+        this.stats.addStatsListener("linesCleared", (s) => {
             var p = s.board.piece;
             s.linesCleared.total.add(p.linesCleared);
             s.linesCleared.count[p.linesCleared - 1].add(1);
+
             if (p.spin) {
                 // TODO add s.spins[p.piece].count[p.linesCleared - 1].add(1)
             }
+
+/* TODO: more robust damage calculation!! */
+
+            let damage = (this.b2b||0) + (p.spin? 2*p.linesCleared:Math.round(0.24*p.linesCleared**2));
+            if(p.spin || p.linesCleared >= 4) this.b2b = 1;
+            else this.b2b = 0;
+            while(this.garbageQueue.length && damage > 0){
+              let defend = Math.min(this.garbageQueue[0], damage);
+              this.garbageQueue[0] -= defend;
+              damage -= defend;
+              if(this.garbageQueue[0] <= 0) this.garbageQueue.shift();
+              console.log(defend, this.garbageQueue);
+            }
+
+            if(damage > 0) sendGarbage(damage); // this.addGarbage(damage);
         });
         this.stats.addStatsListener("spin", function(s) {
             var p = s.board.piece.piece;
@@ -314,13 +342,15 @@ class Game {
         this.stats.addStatsListener("zspin", function(s) {
 
         });
-        this.stats.addStatsListener("tick", function(s) {
+        this.stats.addStatsListener("tick", (s) => {
             if (s.clock.paused)
                 s.totalPauseTime.updateValue(s.clock.getPausedTime());
             else{
                 s.totalTime.updateValue(s.clock.getStoredTime());
 		s.pps.updateValue((1000*s.piecesPlaced.value / (s.clock.getStoredTime() - s.timeOffset)).toFixed(2));
     s.kpp.updateValue((s.inputs / (1+s.piecesPlaced.value)).toFixed(2));
+    s.gq.updateValue(this.garbageQueue.join('->'));
+
 }
 
             // update ps TODO update ps for regular linesCleared
@@ -863,6 +893,7 @@ class Game {
         this.swapped = false;
         this.gravNum = 0;
         this.pieceMoveTimeout = {"right": null, "left": null};
+        this.garbageQueue = [];
 
         this.boolKeys = {right:{down: false}, left: {down: false}, sd: {down: false}};
         this.nextPieces = [];
@@ -1087,12 +1118,15 @@ class Game {
             this.stats.executeStatsListeners("startGame");
         }
 
+
         // if the game can't load in a piece, it's game over
         for (var i = 3; i < 7; i++)
             if (this.board.tiles[20][i].p != "")
                 this.gameOver = true;
 
         if (!this.gameOver && (this.piece == null || this.piece.isDropped)) {
+            games[0].activateGarbage();
+
             // every new piece's turn starts here
             this.stats.executeStatsListeners("pieceSpawn");
             this.piece = this.nextPieces.splice(0, 1)[0];
@@ -1126,6 +1160,8 @@ class Game {
      * resetGame: resets the board but keeps stats and bag
      */
     resetGame() {
+      this.garbageQueue = [];
+
         for (var r = 0; r < 40; r++) {
             for (var c = 0; c < 10; c++) {
                 this.board.tiles[r][c].p = "";
@@ -1392,10 +1428,43 @@ class Game {
         }
         return new Piece(this.bag.pop(), this);
     }
+    addGarbage(attack){
+      this.garbageQueue.push(attack);
+    }
+    activateGarbage(){
+      if(this.garbageQueue.length){
+        while(this.garbageQueue.length) this.applyGarbage(this.garbageQueue.shift());
+        this.updateScreen();
+      }
+    }
+    applyGarbage(ATK){
+      const mm = this.board.tiles;
+      const pos = Math.floor(Math.random()*mm[0].length);
+      for(let i = 20; i < mm.length; i ++){
+        // console.log("r1",i, mm[i]);
+          const row = mm[i];
+          if(i < mm.length-ATK){
+              const row2 = mm[i+ATK]; // console.log("r2",i+ATK,row2);
+              for(let j = 0; j < row.length; j ++){
+                  if(row[j].p !== undefined && row2[j].p!==undefined) row[j].p = row2[j].p;
+                  if(row[j].element!=null&&row2[j].element!=null)
+                      row[j].element.className = row2[j].element.className;
+              }
+          }else{
+              for(let j = 0; j < row.length; j ++){
+                  row[j].p = j === pos ? '' : "o";
+                  row[j].element.className = "gray";
+              }
+          }
+      }
+    }
 
     // sets the displayed screen to match the virtual board
     updateScreen() {
+
         var start = this.board.tiles.length - this.settings.displayedBoardHeight;
+
+
 
         var tempBoard = [];
         for (var r = 0; r < 40; r++) {
@@ -1423,12 +1492,17 @@ class Game {
             }
         }
 
+
+
         this.piece.linesCleared = removedRows.length;
         // TODO add this to constructor of piece object
         if (removedRows.length != 0)
             this.stats.executeStatsListeners("linesCleared");
         if (this.piece.spin)
             this.stats.executeStatsListeners("spin");
+
+
+
 
         // compress
         var swap = function(board, row1, row2) {
@@ -1446,7 +1520,6 @@ class Game {
             }
             offset++;
         }
-
         // copy board to screen
         for (var row = 20; row < 40; row++) {
             for (var col = 0; col < 10; col++) {
@@ -1459,6 +1532,9 @@ class Game {
                     ele.classList.add(value);
             }
         }
+
+
+        // this.activateGarbage();
     }
 
     download() {
@@ -1703,6 +1779,7 @@ class Stats {
 /* TODO: location for reseting data */
 this.pps = new PageStat(["pps", this, 0]);
 this.kpp = new PageStat(["kpp", this, 0]);
+this.gq = new PageStat(["gq", this, ""]);
 this.inputs = 0;
 this.timeOffset = this.clock.getStoredTime()||0;
 
@@ -2140,6 +2217,8 @@ class Piece {
             this.display();
             this.board.swapped = false;
 
+            /* PIECE LOCK */
+
             this.board.updateScreen();
             this.board.playPiece();
         }
@@ -2380,3 +2459,5 @@ class Piece {
         return newArr;
     }
 }
+
+setup();

@@ -19,15 +19,21 @@ io.on('connection', function(socket){
   if(!IPs[address]) IPs[address] = socket.id;
 
   socket.on('updateName', function(data){
-    socketId[socket.id] = data.substring(0, 16);
+    console.log('name',data);
+    socketId[socket.id] = (data||"Jerry Feng").substring(0, 16);
   });
   socket.on('attack', function(data){
-    const x = Object.keys(socketId);
-    if(x.length > 1){
-      let k = Math.floor(Math.random()*(x.length-1));
-      if(x[k] == socket.id) k = x-1;
-
-      io.to(x[k]).emit('receive', data);
+    if(data){
+//console.log('atk',data,'from',socketId[socket.id]);
+      const x = Object.keys(socketId);
+//console.log('ppl', x);
+      if(x.length > 1){
+        let k = Math.floor(Math.random()*(x.length-1));
+//console.log('k=',k);
+        if(x[k] == socket.id) k = x.length-1;
+//console.log("to",k,socketId[x[k]])
+        io.to(x[k]).emit('receive', data);
+      }
     }
   });
   socket.on('disconnect', function(reason){
