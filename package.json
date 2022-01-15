@@ -1,0 +1,28 @@
+{
+	"name": "yuurika",
+	"version": "0.0.5",
+	"description": "yuurika game server",
+	"author": {
+		"name": "NovaSagittarii"
+	},
+	"dependencies": {
+		"express": "^4.16.3",
+		"fs": "0.0.1-security",
+		"https": "^1.0.0",
+		"p5": "^0.6.1",
+		"socket.io": "^2.2.0"
+	},
+	"scripts": {
+		"start": "node index.js"
+	},
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/NovaSagittarii/yuurika.git"
+	},
+	"private": true,
+	"license": "MIT",
+	"bugs": {
+		"url": "https://github.com/NovaSagittarii/yuurika/issues"
+	},
+	"homepage": "https://github.com/NovaSagittarii/yuurika"
+}
